@@ -285,6 +285,16 @@ kbd {
 .swatch::-webkit-color-swatch-wrapper { padding: 4px; }
 .swatch::-webkit-color-swatch { border: 0; border-radius: 1px; }
 .swatch::-moz-color-swatch { border: 0; border-radius: 1px; }
+.auto-color { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.auto-swatch { width: 26px; height: 26px; flex: none; border: 1px solid var(--rule-2); border-radius: var(--r);
+  background: repeating-linear-gradient(45deg, var(--chrome) 0 4px, var(--panel) 4px 8px); }
+.auto-color-text { flex: 1; min-width: 0; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.range-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.range-row input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.range-row .val { width: 26px; text-align: right; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.auto-result { margin: 0; padding: 7px 9px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--chrome); font-size: 12.5px; color: var(--ink); }
+.auto-result.bad { color: var(--bad); background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+.auto-result.warn { color: var(--warn); background: var(--warn-soft); border-color: var(--warn-line); }
 .tbl-wrap { max-height: 236px; overflow: auto; border: 1px solid var(--rule); border-radius: var(--r); }
 table.pts { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 table.pts th { position: sticky; top: 0; z-index: 1; background: var(--chrome); color: var(--ink-2); font-weight: 600; font-size: 12px; text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--rule); }
@@ -429,6 +439,7 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
     <div class="toolbar" id="tools">
       <button class="tbtn" data-tool="add" data-icon="target" title="Add points (A)"><span class="lbl">Add points</span></button>
       <button class="tbtn" data-tool="select" data-icon="cursor" title="Select and move (V)"><span class="lbl">Select</span></button>
+      <button class="tbtn" data-tool="auto" data-icon="scan" title="Detect points automatically by colour (D)"><span class="lbl">Auto-detect</span></button>
       <span class="tsep"></span>
       <button class="tbtn" data-toggle="snap" data-icon="magnet" title="Snap clicks to the nearest marker centre (S)"><span class="lbl">Snap</span></button>
       <button class="tbtn" data-toggle="guides" data-icon="guides" title="Crosshair guides along the calibrated axes (C)"><span class="lbl">Guides</span></button>
@@ -539,6 +550,45 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
         </div>
       </details>
 
+      <details class="sec" id="secAuto" open hidden>
+        <summary class="phead"><svg class="chev" data-icon-inline="chev"></svg>Auto-detect<span class="pill plain" id="autoPill"></span></summary>
+        <div class="sec-body">
+          <div class="auto-color">
+            <span class="auto-swatch" id="autoSwatch"></span>
+            <span class="auto-color-text" id="autoColorText">Click on the data in the plot to pick its colour.</span>
+          </div>
+          <div class="opts">
+            <span class="flabel">Look for</span>
+            <div class="seg" data-auto="mode" role="group" aria-label="What to detect"><button data-v="markers">Markers</button><button data-v="line">Line</button></div>
+            <span class="flabel">Tolerance</span>
+            <div class="range-row"><input type="range" id="autoTol" min="1" max="100" step="1" aria-label="Colour tolerance"><span class="val" id="autoTolVal">30</span></div>
+            <span class="flabel" data-auto-only="markers">Marker size</span>
+            <div class="opt-row" data-auto-only="markers">
+              <input type="number" class="field num" id="autoMin" min="1" max="500" step="1" aria-label="Smallest marker size in pixels">
+              <span class="unit">to</span>
+              <input type="number" class="field num" id="autoMax" min="1" max="2000" step="1" aria-label="Largest marker size in pixels">
+              <span class="unit">px</span>
+            </div>
+            <span class="flabel" data-auto-only="markers"></span>
+            <label class="check" data-auto-only="markers"><input type="checkbox" id="autoSplit">Split touching markers</label>
+            <span class="flabel" data-auto-only="line">Spacing</span>
+            <div class="opt-row" data-auto-only="line">
+              <input type="number" class="field num" id="autoStep" min="1" max="500" step="1" aria-label="Spacing between traced points in pixels">
+              <span class="unit">px between points</span>
+            </div>
+            <span class="flabel">Search area</span>
+            <div class="opt-row"><span class="unit" id="autoAreaText">Whole image</span><button class="btn btn-sm" id="autoClearBox">Use whole image</button></div>
+            <span class="flabel"></span>
+            <label class="check"><input type="checkbox" id="autoShowMask">Highlight matching pixels</label>
+          </div>
+          <p class="auto-result" id="autoMsg"></p>
+          <div class="row">
+            <button class="btn btn-primary grow" id="autoAdd" data-icon="plus">Add points</button>
+            <button class="btn" id="autoNew" title="Put the detected points in a new series">New series</button>
+          </div>
+        </div>
+      </details>
+
       <details class="sec" id="secPoints" open>
         <summary class="phead"><svg class="chev" data-icon-inline="chev"></svg>Points<span class="pill plain" id="ptPill">0</span></summary>
         <div class="sec-body">
@@ -619,7 +669,7 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
         <ol>
           <li><b>Open a plot.</b> An image file, a PDF page, a pasted screenshot, or a file dropped on the stage. Each one opens in its own tab.</li>
           <li><b>Calibrate.</b> Place X1 and X2 on two known points of the X axis, and Y1 and Y2 on the Y axis, then type their values. Pick Linear or Log for each axis. Rotated or skewed axes work too.</li>
-          <li><b>Mark points.</b> Click on the data. The magnifier shows the pixels under the cursor; drag a point to adjust it.</li>
+          <li><b>Mark points.</b> Click on the data. The magnifier shows the pixels under the cursor; drag a point to adjust it. Or use <b>Auto-detect</b>: click the data to pick its colour, drag a box around the plot area, and add the points it finds.</li>
           <li><b>Export.</b> Choose the order, separator and error columns, then copy the text or save a .txt or .csv file.</li>
         </ol>
       </section>
@@ -638,7 +688,7 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
       <section class="help-wide">
         <h3>Keyboard</h3>
         <dl class="keys" style="grid-template-columns: auto 1fr auto 1fr;">
-          <dt><kbd>A</kbd> <kbd>V</kbd></dt><dd>Add or Select tool</dd>
+          <dt><kbd>A</kbd> <kbd>V</kbd> <kbd>D</kbd></dt><dd>Add, Select or Auto-detect tool</dd>
           <dt><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd></dt><dd>Move the selection, or the crosshair, by one screen pixel (<kbd>⇧</kbd> for 10)</dd>
           <dt><kbd>Enter</kbd></dt><dd>Add a point at the crosshair</dd>
           <dt><kbd>⌫</kbd></dt><dd>Delete the selected point, or the last point if none is selected</dd>
@@ -711,6 +761,7 @@ const ICONS = {
   fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   target: '<circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
   cursor: '<path d="M5.5 3.5 18.5 10l-5.6 1.9-1.9 5.6z"/>',
+  scan: '<path d="M4 8.5V4h4.5M15.5 4H20v4.5M20 15.5V20h-4.5M8.5 20H4v-4.5"/><circle cx="9" cy="14" r="1.6" fill="currentColor"/><circle cx="12.5" cy="10.5" r="1.6" fill="currentColor"/><circle cx="16" cy="8.5" r="1.6" fill="currentColor"/>',
   magnet: '<path d="M5 4h4v7a3 3 0 0 0 6 0V4h4v7a7 7 0 0 1-14 0z"/><path d="M5 8h4M15 8h4"/>',
   guides: '<path d="M12 3v6M12 15v6M3 12h6M15 12h6"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
   grid: '<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9.33h16M4 14.67h16M9.33 4v16M14.67 4v16"/>',
@@ -794,6 +845,7 @@ const state = {
   exp: Object.assign({ order: 'none', scope: 'active', sep: 'space', fmt: 'auto', digits: 6, header: true, errors: false, sigma: 0.5 }, store.get('export', {})),
   hover: null,
   cursor: null,          // { ix, iy, inside, kb }
+  autoOpts: Object.assign({ mode: 'markers', tol: 30, minSize: 3, maxSize: 40, split: true, step: 10, showMask: true }, store.get('auto', {})),
 };
 let uid = 1;
 const nid = () => uid++;
@@ -806,6 +858,7 @@ function makeDoc(name, img, src) {
     view: { scale: 1, ox: 0, oy: 0, fit: true },
     axes: { x1: { px: null, py: null, v: '' }, x2: { px: null, py: null, v: '' }, y1: { px: null, py: null, v: '' }, y2: { px: null, py: null, v: '' } },
     log: { x: false, y: false }, lockAxes: false,
+    auto: { color: null, box: null },
     series: [s], activeSeries: s.id, sel: null, undo: [], redo: [],
   };
 }
@@ -1006,6 +1059,7 @@ function sortedForLines(d, s, c) {
 function drawOverlays(g, d, T, c, mode) {
   const loupeMode = mode === 'loupe';
   if (state.grid && c.ok) drawGrid(g, d, T, c, mode);
+  if (state.tool === 'auto') drawAutoLayer(g, d, T, mode);
   // reference lines between axis pairs
   g.save();
   g.setLineDash([6, 5]); g.lineCap = 'butt';
@@ -1265,6 +1319,11 @@ canvas.addEventListener('pointerdown', e => {
   }
   if (e.button !== 0) return;
   if (pop.key && !state.calib) commitPopover(true);
+  if (state.tool === 'auto' && !state.calib) {
+    // Auto-detect: a click picks the data colour, a drag draws the search area.
+    gesture = { type: 'autoPending', sx: p.x, sy: p.y, ix: clamp(ip.x, 0, d.w), iy: clamp(ip.y, 0, d.h) };
+    return;
+  }
   if (!state.calib) {
     const h = hitTest(d, p.x, p.y);
     if (h) {
@@ -1294,6 +1353,11 @@ canvas.addEventListener('pointermove', e => {
   if (gesture) {
     const dx = p.x - gesture.sx, dy = p.y - gesture.sy;
     if (gesture.type === 'pending' && Math.hypot(dx, dy) > 4) { gesture.type = 'pan'; setCanvasCursor(); }
+    if (gesture.type === 'autoPending' && Math.hypot(dx, dy) > 4) gesture.type = 'autoBox';
+    if (gesture.type === 'autoBox') {
+      d.auto.box = { x0: gesture.ix, y0: gesture.iy, x1: clamp(ip.x, 0, d.w), y1: clamp(ip.y, 0, d.h) };
+      changed();
+    }
     if (gesture.type === 'pan') {
       d.view.ox = gesture.ox + dx; d.view.oy = gesture.oy + dy; d.view.fit = false;
       clampView(d);
@@ -1307,7 +1371,7 @@ canvas.addEventListener('pointermove', e => {
       changed();
     }
   } else {
-    const h = state.calib ? null : hitTest(d, p.x, p.y);
+    const h = state.calib || state.tool === 'auto' ? null : hitTest(d, p.x, p.y);
     if (!sameHit(h, state.hover)) { state.hover = h; markHoverRow(); }
     setCanvasCursor(h);
   }
@@ -1329,6 +1393,13 @@ function endPointer(e, cancelled) {
     else select(d, null);
   } else if (g.type === 'drag') {
     if (!g.moved && g.hit.kind === 'axis') openPopover(g.hit.key);
+    changed();
+  } else if (g.type === 'autoPending') {
+    const p = evPos(e), ip = toImg(d, p.x, p.y);
+    if (ip.x >= 0 && ip.y >= 0 && ip.x <= d.w && ip.y <= d.h) pickColour(d, ip.x, ip.y);
+  } else if (g.type === 'autoBox') {
+    const b = d.auto.box;
+    if (b && (Math.abs(b.x1 - b.x0) < 3 || Math.abs(b.y1 - b.y0) < 3)) d.auto.box = null;
     changed();
   }
   setCanvasCursor(hitTest(d, evPos(e).x, evPos(e).y));
@@ -1409,9 +1480,9 @@ function clearSeries() {
   pushUndo(d); s.points = []; d.sel = null; changed();
   toast(`Cleared ${n} point${n === 1 ? '' : 's'} from ${s.name}.`, { action: { label: 'Undo', fn: undo } });
 }
-function addSeries() {
+function addSeries(noUndo) {
   const d = cur(); if (!d) return;
-  pushUndo(d);
+  if (!noUndo) pushUndo(d);
   const used = new Set(d.series.map(s => s.color.toLowerCase()));
   const color = SERIES_COLORS.find(c => !used.has(c.toLowerCase())) || SERIES_COLORS[d.series.length % SERIES_COLORS.length];
   const names = new Set(d.series.map(s => s.name));
@@ -1482,6 +1553,280 @@ function snapCentroid(d, x, y, R) {
   }
   if (sw < 0.6) return null;
   return { x: sx / sw, y: sy / sw };
+}
+
+
+/* ================= auto-detect ================= */
+// Finds pixels close to a picked colour, then either groups them into marker blobs
+// (one point per blob centre) or traces a line by stepping along the X axis.
+function imageDataOf(d) {
+  if (!d._idata) d._idata = pixelCtx(d).getImageData(0, 0, d.w, d.h);
+  return d._idata;
+}
+function autoRegion(d) {
+  const b = d.auto.box;
+  if (!b) return { x0: 0, y0: 0, x1: d.w, y1: d.h };
+  return {
+    x0: clamp(Math.floor(Math.min(b.x0, b.x1)), 0, d.w), y0: clamp(Math.floor(Math.min(b.y0, b.y1)), 0, d.h),
+    x1: clamp(Math.ceil(Math.max(b.x0, b.x1)), 0, d.w), y1: clamp(Math.ceil(Math.max(b.y0, b.y1)), 0, d.h),
+  };
+}
+const hex2 = n => n.toString(16).padStart(2, '0');
+const rgbHex = c => '#' + c.map(hex2).join('').toUpperCase();
+// The colour under a click: the average of the pixels in a 7×7 window that differ most from the page background.
+function pickColour(d, x, y) {
+  let img;
+  try { img = imageDataOf(d); } catch { toast('This image can’t be read for auto-detection.', { kind: 'bad' }); return; }
+  const data = img.data, W = d.w, H = d.h;
+  if (!d._bg) {
+    const ring = [];
+    for (let i = 0; i < W; i += Math.max(1, W >> 7)) { ring.push((i) * 4, ((H - 1) * W + i) * 4); }
+    for (let j = 0; j < H; j += Math.max(1, H >> 7)) { ring.push((j * W) * 4, (j * W + W - 1) * 4); }
+    const med = k => { const v = ring.map(o => data[o + k]).sort((a, b) => a - b); return v[v.length >> 1]; };
+    d._bg = [med(0), med(1), med(2)];
+  }
+  const cx = Math.floor(x), cy = Math.floor(y), win = [];
+  for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) {
+    const xx = cx + i, yy = cy + j;
+    if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+    const o = (yy * W + xx) * 4;
+    const dist = Math.hypot(data[o] - d._bg[0], data[o + 1] - d._bg[1], data[o + 2] - d._bg[2]);
+    win.push({ o, dist });
+  }
+  win.sort((a, b) => b.dist - a.dist);
+  let pick = win.filter(p => p.dist > 40);
+  pick = pick.length ? pick.slice(0, Math.max(1, Math.ceil(pick.length * 0.4))) : [win.find(p => p.o === (cy * W + cx) * 4) || win[0]];
+  const c = [0, 1, 2].map(k => Math.round(pick.reduce((sum, p) => sum + data[p.o + k], 0) / pick.length));
+  d.auto.color = c;
+  changed();
+}
+function findMarkers(res, o) {
+  const { mask, rw, rh, R } = res;
+  const seen = new Uint8Array(rw * rh), stack = new Int32Array(res.count + 1);
+  const comps = [];
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i] || seen[i]) continue;
+    let sp = 0; stack[sp++] = i; seen[i] = 1;
+    const pix = []; let minx = rw, maxx = 0, miny = rh, maxy = 0;
+    while (sp) {
+      const j = stack[--sp]; pix.push(j);
+      const x = j % rw, y = (j / rw) | 0;
+      if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= rw || ny >= rh) continue;
+        const k = ny * rw + nx;
+        if (mask[k] && !seen[k]) { seen[k] = 1; stack[sp++] = k; }
+      }
+    }
+    comps.push({ pix, w: maxx - minx + 1, h: maxy - miny + 1 });
+  }
+  const minS = Math.max(1, Number(o.minSize) || 1), maxS = Math.max(minS, Number(o.maxSize) || 40);
+  const ok = comps.filter(c => Math.max(c.w, c.h) >= minS && Math.min(c.w, c.h) >= Math.min(minS, 2));
+  for (const c of ok) { let sx = 0, sy = 0; for (const j of c.pix) { sx += j % rw; sy += (j / rw) | 0; } c.cx = R.x0 + sx / c.pix.length + 0.5; c.cy = R.y0 + sy / c.pix.length + 0.5; }
+  const B0 = res.R0;
+  const sized = ok.filter(c => Math.max(c.w, c.h) <= maxS && c.cx >= B0.x0 && c.cx <= B0.x1 && c.cy >= B0.y0 && c.cy <= B0.y1);
+  const areas = sized.map(c => c.pix.length).sort((a, b) => a - b);
+  const typical = areas.length ? areas[areas.length >> 1] : 0;
+  const centre = c => ({ px: c.cx, py: c.cy });
+  const pts = [];
+  let skippedBig = 0;
+  const side = Math.sqrt(typical), B = res.R0;
+  const inBox = p => p.px >= B.x0 && p.px <= B.x1 && p.py >= B.y0 && p.py <= B.y1;
+  for (const c of ok) {
+    if (!inBox(centre(c))) continue;
+    let k = o.split && typical >= 4 && sized.length >= 3 ? Math.round(c.pix.length / typical) : 1;
+    // Only blobs as thick and compact as touching markers are split; thin lines and text are not.
+    if (k >= 2 && !(k <= 16 && Math.min(c.w, c.h) >= 0.6 * side && Math.max(c.w, c.h) <= (k + 0.5) * side * 1.3 && c.pix.length / (c.w * c.h) >= 0.25)) k = 1;
+    if (k >= 2) pts.push(...splitBlob(c.pix, k, rw, R).filter(inBox));
+    else if (Math.max(c.w, c.h) > maxS) skippedBig++;
+    else pts.push(centre(c));
+  }
+  res.points = pts;
+  res.skippedBig = skippedBig;
+}
+// Splits a blob of k touching markers with a few rounds of k-means on its pixel coordinates.
+function splitBlob(pix, k, rw, R) {
+  const P = pix.map(j => [j % rw, (j / rw) | 0]);
+  const xs = P.map(p => p[0]), ys = P.map(p => p[1]);
+  const wide = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
+  const sorted = P.slice().sort((a, b) => wide ? a[0] - b[0] : a[1] - b[1]);
+  let C = Array.from({ length: k }, (_, i) => sorted[Math.floor((i + 0.5) / k * sorted.length)].slice());
+  for (let it = 0; it < 12; it++) {
+    const acc = C.map(() => [0, 0, 0]);
+    for (const p of P) {
+      let bi = 0, bd = Infinity;
+      for (let i = 0; i < k; i++) { const dd = (p[0] - C[i][0]) ** 2 + (p[1] - C[i][1]) ** 2; if (dd < bd) { bd = dd; bi = i; } }
+      acc[bi][0] += p[0]; acc[bi][1] += p[1]; acc[bi][2]++;
+    }
+    C = acc.map((a, i) => a[2] ? [a[0] / a[2], a[1] / a[2]] : C[i]);
+  }
+  return C.map(c => ({ px: R.x0 + c[0] + 0.5, py: R.y0 + c[1] + 0.5 }));
+}
+function traceLine(d, res, o) {
+  const { mask, rw, R } = res, c = calibration(d);
+  const toAB = c.ok ? (x, y) => abFromPixel(c, x, y) : (x, y) => ({ a: x, b: y });
+  const lx = c.ok ? Math.hypot(c.Xd.x, c.Xd.y) : 1, ly = c.ok ? Math.hypot(c.Yd.x, c.Yd.y) : 1;
+  const stepA = Math.max(1, Number(o.step) || 10) / lx, gapB = 3 / ly;
+  const bins = new Map();
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const px = R.x0 + (i % rw) + 0.5, py = R.y0 + ((i / rw) | 0) + 0.5;
+    const { a, b } = toAB(px, py);
+    const key = Math.floor(a / stepA);
+    let bin = bins.get(key); if (!bin) bins.set(key, bin = []);
+    bin.push([b, px, py]);
+  }
+  const pts = [];
+  for (const key of [...bins.keys()].sort((p, q) => p - q)) {
+    const bin = bins.get(key).sort((p, q) => p[0] - q[0]);
+    let start = 0;
+    for (let i = 1; i <= bin.length; i++) {
+      if (i === bin.length || Math.abs(bin[i][0] - bin[i - 1][0]) > gapB) {
+        if (i - start >= 2) {
+          let sx = 0, sy = 0;
+          for (let j = start; j < i; j++) { sx += bin[j][1]; sy += bin[j][2]; }
+          pts.push({ px: sx / (i - start), py: sy / (i - start) });
+        }
+        start = i;
+      }
+    }
+  }
+  res.points = pts;
+}
+function maskOverlay(res, col) {
+  const cv = document.createElement('canvas'); cv.width = res.rw; cv.height = res.rh;
+  const g = cv.getContext('2d'), id = g.createImageData(res.rw, res.rh), out = id.data;
+  const warm = col[0] > 150 && col[1] > 100 && col[2] < 130;
+  const hl = warm ? [0, 170, 220] : [255, 170, 0];
+  for (let i = 0; i < res.mask.length; i++) if (res.mask[i]) { const q = i * 4; out[q] = hl[0]; out[q + 1] = hl[1]; out[q + 2] = hl[2]; out[q + 3] = 210; }
+  g.putImageData(id, 0, 0);
+  return cv;
+}
+function runDetect(d) {
+  const o = state.autoOpts, col = d.auto.color;
+  d._auto = null;
+  if (!col) return;
+  let img;
+  try { img = imageDataOf(d); } catch { d._auto = { error: 'This image can’t be read for auto-detection.', points: [] }; return; }
+  const data = img.data, W = d.w, R0 = autoRegion(d);
+  const m = o.mode === 'markers' && d.auto.box ? Math.ceil(Math.min(Number(o.maxSize) || 40, 80) / 2) : 0;
+  const R = { x0: Math.max(0, R0.x0 - m), y0: Math.max(0, R0.y0 - m), x1: Math.min(d.w, R0.x1 + m), y1: Math.min(d.h, R0.y1 + m) };
+  const rw = R.x1 - R.x0, rh = R.y1 - R.y0;
+  if (R0.x1 - R0.x0 < 3 || R0.y1 - R0.y0 < 3) { d._auto = { error: 'The search area is too small. Drag a larger box.', points: [] }; return; }
+  const tol = clamp(Number(o.tol) || 30, 1, 100) * 2.2, tol2 = tol * tol;
+  // Distance is measured in luma/chroma space with chroma counted twice, so grey
+  // anti-aliasing around black text does not match coloured data of similar brightness.
+  const ycc = (r, g, b) => { const Y = 0.299 * r + 0.587 * g + 0.114 * b; return [Y, 0.564 * (b - Y), 0.713 * (r - Y)]; };
+  const [pY, pB, pR] = ycc(col[0], col[1], col[2]);
+  const mask = new Uint8Array(rw * rh); let count = 0;
+  for (let y = 0; y < rh; y++) {
+    let q = ((y + R.y0) * W + R.x0) * 4;
+    for (let x = 0; x < rw; x++, q += 4) {
+      if (data[q + 3] < 128) continue;
+      const r = data[q], g = data[q + 1], b = data[q + 2];
+      const Y = 0.299 * r + 0.587 * g + 0.114 * b;
+      const dY = Y - pY, dB = 2 * (0.564 * (b - Y) - pB), dR = 2 * (0.713 * (r - Y) - pR);
+      if (dY * dY + dB * dB + dR * dR <= tol2) { mask[y * rw + x] = 1; count++; }
+    }
+  }
+  const res = { R, R0, rw, rh, mask, count, points: [] };
+  if (count > 0.35 * (R0.x1 - R0.x0) * (R0.y1 - R0.y0)) res.warn = 'Over a third of the search area matches this colour. Lower the tolerance, or click on the data again.';
+  if (count) { if (o.mode === 'line') traceLine(d, res, o); else findMarkers(res, o); }
+  // Drop detections that sit on points already in the active series, and order the rest along X.
+  const c = calibration(d), s = activeSeries(d);
+  const ax = p => c.ok ? abFromPixel(c, p.px, p.py).a : p.px;
+  res.all = res.points.sort((p, q) => ax(p) - ax(q));
+  res.points = res.all.filter(p => !s.points.some(q => Math.hypot(q.px - p.px, q.py - p.py) < 3));
+  res.dupes = res.all.length - res.points.length;
+  res.overlay = count ? maskOverlay(res, col) : null;
+  d._auto = res;
+}
+let autoTimer = 0;
+function scheduleDetect(d) {
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => { if (cur() === d && state.tool === 'auto') { runDetect(d); changed(); } }, 110);
+}
+function autoAccept(newSeries) {
+  const d = cur(), r = d && d._auto;
+  if (!r || !(newSeries ? r.all : r.points).length) { toast('There are no detected points to add.'); return; }
+  pushUndo(d);
+  if (newSeries) addSeries(true);
+  const s = activeSeries(d), list = newSeries ? r.all : r.points;
+  list.forEach(p => s.points.push({ id: nid(), px: p.px, py: p.py }));
+  d.sel = null;
+  toast(`Added ${list.length} point${list.length === 1 ? '' : 's'} to ${s.name}.`, { action: { label: 'Undo', fn: undo } });
+  changed();
+}
+function drawAutoLayer(g, d, T, mode) {
+  const R = autoRegion(d), r = d._auto, box = d.auto.box;
+  if (box && mode === 'main') {
+    g.save();
+    g.fillStyle = 'rgba(20,24,28,.30)';
+    g.beginPath();
+    g.rect(T.x(0), T.y(0), d.w * T.s, d.h * T.s);
+    g.rect(T.x(R.x0), T.y(R.y0), (R.x1 - R.x0) * T.s, (R.y1 - R.y0) * T.s);
+    g.fill('evenodd');
+    g.restore();
+  }
+  if (r && r.overlay && state.autoOpts.showMask) {
+    g.save(); g.imageSmoothingEnabled = false; g.globalAlpha = 0.8;
+    g.drawImage(r.overlay, T.x(r.R.x0), T.y(r.R.y0), r.rw * T.s, r.rh * T.s);
+    g.restore();
+  }
+  if (box) {
+    g.save(); g.setLineDash([5, 4]);
+    haloStroke(g, () => { g.beginPath(); g.rect(T.x(R.x0), T.y(R.y0), (R.x1 - R.x0) * T.s, (R.y1 - R.y0) * T.s); }, '#1F5FAD', 1.4, 3.5);
+    g.restore();
+  }
+  if (r && r.points && r.points.length) {
+    const col = activeSeries(d).color, a = mode === 'loupe' ? 6 : 4.5;
+    g.lineCap = 'round';
+    for (const p of r.points) {
+      const x = T.x(p.px), y = T.y(p.py);
+      haloStroke(g, () => { g.beginPath(); g.moveTo(x - a, y - a); g.lineTo(x + a, y + a); g.moveTo(x + a, y - a); g.lineTo(x - a, y + a); }, col, 1.9, 4.5);
+    }
+  }
+}
+function syncAuto(d) {
+  const sec = $('#secAuto'), on = state.tool === 'auto' && !!d;
+  sec.hidden = !on;
+  if (!on) return;
+  const o = state.autoOpts, A = d.auto;
+  const sig = JSON.stringify([A.color, A.box, o, d.activeSeries, activeSeries(d).points.length, o.mode === 'line' ? [d.axes, d.log] : 0]);
+  if (sig !== d._autoSig) { d._autoSig = sig; scheduleDetect(d); }
+  const sw = $('#autoSwatch');
+  sw.style.background = A.color ? rgbHex(A.color) : '';
+  $('#autoColorText').textContent = A.color ? `Data colour ${rgbHex(A.color)}. Click the plot again to change it.` : 'Click on the data in the plot to pick its colour.';
+  $$('.seg[data-auto] button').forEach(b => b.setAttribute('aria-pressed', String(o.mode === b.dataset.v)));
+  $$('[data-auto-only]').forEach(el => { el.hidden = el.dataset.autoOnly !== o.mode; });
+  const setNum = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = v; };
+  setNum('#autoTol', o.tol); $('#autoTolVal').textContent = o.tol;
+  setNum('#autoMin', o.minSize); setNum('#autoMax', o.maxSize); setNum('#autoStep', o.step);
+  $('#autoSplit').checked = !!o.split; $('#autoShowMask').checked = !!o.showMask;
+  const R = autoRegion(d);
+  $('#autoAreaText').textContent = A.box ? `Box, ${R.x1 - R.x0} × ${R.y1 - R.y0} px` : 'Whole image';
+  $('#autoClearBox').disabled = !A.box;
+  const r = d._auto, msg = $('#autoMsg'), n = r && r.points ? r.points.length : 0;
+  let text = '', cls = 'auto-result';
+  if (!A.color) text = 'Pick a colour to start. Then drag a box around the data so the axes, labels and legend are left out.';
+  else if (!r) text = 'Searching…';
+  else if (r.error) { text = r.error; cls += ' bad'; }
+  else {
+    const what = o.mode === 'line' ? 'point' : 'marker';
+    text = r.count ? `Found ${n} new ${what}${n === 1 ? '' : 's'}` : 'No pixels match this colour. Raise the tolerance.';
+    if (r.count && r.dupes) text += `; ${r.dupes} already in ${activeSeries(d).name}`;
+    if (r.count) text += '.';
+    if (r.skippedBig) text += ` Ignored ${r.skippedBig} shape${r.skippedBig === 1 ? '' : 's'} larger than the marker size.`;
+    if (o.mode === 'line' && !calibration(d).ok) text += ' Spacing is measured in image pixels until the axes are calibrated.';
+    if (r.warn) { text = r.warn + ' ' + text; cls += ' warn'; }
+  }
+  msg.className = cls; msg.textContent = text;
+  $('#autoPill').textContent = r && r.points ? `${n} found` : '';
+  const add = $('#autoAdd');
+  add.lastChild.textContent = n ? `Add ${n} point${n === 1 ? '' : 's'} to ${activeSeries(d).name}` : 'Add points';
+  add.disabled = !n;
+  $('#autoNew').disabled = !(r && r.all && r.all.length);
 }
 
 /* ================= calibration flow ================= */
@@ -1895,7 +2240,7 @@ let lastTabsHTML = '', lastChipsHTML = '', lastRowsHTML = '', scrollSelIntoView 
 function syncUI() {
   const d = cur();
   $('#empty').hidden = !!d;
-  syncTabs(); syncToolbar(); syncAxes(d); syncSeries(d); syncTable(d); syncExport(d); syncBanner(d); syncStatus();
+  syncTabs(); syncToolbar(); syncAxes(d); syncAuto(d); syncSeries(d); syncTable(d); syncExport(d); syncBanner(d); syncStatus();
   $('#btnUndo').disabled = !d || !d.undo.length;
   $('#btnRedo').disabled = !d || !d.redo.length;
   $('#miCloseTab').disabled = !d;
@@ -2013,12 +2358,27 @@ function syncBanner(d) {
     $('#bannerText').textContent = pop.key === k ? `Type the ${k[0].toUpperCase()} value at the marker, or click again to move it.` : STEP_TEXT[k];
     keep.hidden = !(state.calib.guided && a.px != null && String(a.v).trim() !== '' && pop.key !== k);
     go.hidden = true; cancel.hidden = false;
+    go.textContent = 'Calibrate'; cancel.textContent = 'Cancel';
+    ban.hidden = false;
+  } else if (state.tool === 'auto') {
+    const r = d._auto, n = r && r.points ? r.points.length : 0;
+    ban.className = 'infobar';
+    $('#bannerStep').textContent = 'Auto-detect';
+    $('#bannerText').textContent = !d.auto.color ? 'Click on a data marker or line to pick its colour.'
+      : !r ? 'Searching…'
+      : n && !d.auto.box ? `Found ${n} new point${n === 1 ? '' : 's'}. Drag a box around the data to leave out the axes, labels and legend.`
+      : n ? `Found ${n} new point${n === 1 ? '' : 's'}. Check the crosses on the plot, then add them.`
+      : 'No new points found. Adjust the tolerance or the search area.';
+    keep.hidden = true;
+    go.hidden = !n; go.textContent = `Add ${n} point${n === 1 ? '' : 's'}`;
+    cancel.hidden = false; cancel.textContent = 'Done';
     ban.hidden = false;
   } else if (!c.ok) {
     ban.className = 'infobar soft';
     $('#bannerStep').textContent = c.level === 'bad' ? 'Check axes' : 'Not calibrated';
     $('#bannerText').textContent = c.level === 'bad' ? c.msg : 'Calibrate the axes so clicks turn into values.';
     keep.hidden = true; go.hidden = false; cancel.hidden = true;
+    go.textContent = 'Calibrate';
     ban.hidden = !!pop.key;
   } else ban.hidden = true;
 }
@@ -2027,6 +2387,7 @@ function syncStatus() {
   const hint = $('#statusHint');
   if (!d) hint.textContent = 'Open an image or a PDF page to begin. You can also drop or paste one.';
   else if (state.calib) hint.textContent = `Calibrating ${AXIS_LABEL[state.calib.key]}: ${STEP_TEXT[state.calib.key]} Esc cancels.`;
+  else if (state.tool === 'auto') hint.textContent = `Auto-detect: click picks the data colour · drag draws the search area · Enter adds the points · Esc clears the area · hold Space to pan`;
   else if (state.tool === 'add') hint.textContent = `Click to add a point to ${activeSeries(d).name} · ${MOD}-scroll or pinch to zoom · right-click a point to delete · press ? for shortcuts`;
   else hint.textContent = `Click a point to select it · drag to move · ${IS_MAC ? '⌫' : 'Delete'} removes it · arrows nudge by one screen pixel`;
   $('#stSize').textContent = d ? `${d.w} × ${d.h} px` : '';
@@ -2076,9 +2437,20 @@ $$('.modal').forEach(m => {
   m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-close-modal]')) closeModal(m.id); });
 });
 
+function setTool(t) {
+  state.tool = t;
+  if (state.calib) cancelCalib();
+  const d = cur(); if (d) d.sel = null;
+  state.hover = null;
+  changed();
+  if (t === 'auto') {
+    const sec = $('#secAuto'); sec.open = true;
+    requestAnimationFrame(() => sec.scrollIntoView({ block: 'nearest' }));
+  }
+}
 $('#tools').addEventListener('click', e => {
   const t = e.target.closest('[data-tool]');
-  if (t) { state.tool = t.dataset.tool; if (state.calib) cancelCalib(); changed(); canvas.focus({ preventScroll: true }); return; }
+  if (t) { setTool(t.dataset.tool); canvas.focus({ preventScroll: true }); return; }
   const g = e.target.closest('[data-toggle]');
   if (g) toggle(g.dataset.toggle);
 });
@@ -2098,7 +2470,8 @@ $('#lzIn').addEventListener('click', () => setLoupe(1));
 $('#lzOut').addEventListener('click', () => setLoupe(-1));
 
 $('#banner').addEventListener('click', e => {
-  if (e.target.closest('#bannerCancel')) cancelCalib();
+  if (e.target.closest('#bannerCancel')) { if (!state.calib && state.tool === 'auto') setTool('add'); else cancelCalib(); }
+  else if (e.target.closest('#bannerGo') && !state.calib && state.tool === 'auto') autoAccept(false);
   else if (e.target.closest('#bannerGo')) { const d = cur(); const c = d && calibration(d); startCalib(c && c.key && d.axes[c.key].px == null ? c.key : 'x1', true); }
   else if (e.target.closest('#bannerKeep')) { if (state.calib) advanceCalib(state.calib.key); }
 });
@@ -2124,7 +2497,7 @@ $('#btnLock').addEventListener('click', () => { const d = cur(); if (!d) return;
 
 // points panel
 $('#chips').addEventListener('click', e => {
-  if (e.target.closest('#btnAddSeries')) { addSeries(); setTimeout(() => { $('#seriesName').focus(); $('#seriesName').select(); }, 30); return; }
+  if (e.target.closest('#btnAddSeries')) { addSeries(false); setTimeout(() => { $('#seriesName').focus(); $('#seriesName').select(); }, 30); return; }
   const c = e.target.closest('[data-sid]'); const d = cur();
   if (c && d) { d.activeSeries = Number(c.dataset.sid); d.sel = null; changed(); }
 });
@@ -2150,6 +2523,20 @@ $('#ptsBody').addEventListener('mouseover', e => {
   if (!sameHit(h, state.hover)) { state.hover = h; requestDraw(); }
 });
 $('#ptsBody').addEventListener('mouseleave', () => { state.hover = null; markHoverRow(); requestDraw(); });
+
+// auto-detect panel
+function setAuto(k, v) { state.autoOpts[k] = v; store.set('auto', state.autoOpts); changed(); }
+$$('.seg[data-auto]').forEach(seg => seg.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setAuto(seg.dataset.auto, b.dataset.v); }));
+$('#autoTol').addEventListener('input', e => setAuto('tol', Number(e.target.value)));
+[['#autoMin', 'minSize'], ['#autoMax', 'maxSize'], ['#autoStep', 'step']].forEach(([id, k]) => {
+  $(id).addEventListener('input', e => { const v = Number(e.target.value); if (v >= 1) setAuto(k, v); });
+  $(id).addEventListener('blur', () => changed());
+});
+$('#autoSplit').addEventListener('change', e => setAuto('split', e.target.checked));
+$('#autoShowMask').addEventListener('change', e => setAuto('showMask', e.target.checked));
+$('#autoClearBox').addEventListener('click', () => { const d = cur(); if (d) { d.auto.box = null; changed(); } });
+$('#autoAdd').addEventListener('click', () => autoAccept(false));
+$('#autoNew').addEventListener('click', () => autoAccept(true));
 
 // export panel
 function setExp(k, v) { state.exp[k] = v; store.set('export', state.exp); changed(); }
@@ -2200,7 +2587,9 @@ window.addEventListener('keydown', e => {
     if (typing) return;
     if (pop.key) { closePopover(); if (state.calib) cancelCalib(); else changed(); return; }
     if (state.calib) { cancelCalib(); return; }
-    const d = cur(); if (d && d.sel) { d.sel = null; changed(); }
+    const d = cur();
+    if (d && state.tool === 'auto' && d.auto.box) { d.auto.box = null; changed(); return; }
+    if (d && d.sel) { d.sel = null; changed(); }
     return;
   }
   if (openModalEl || typing) return;
@@ -2222,8 +2611,9 @@ window.addEventListener('keydown', e => {
     case ' ':
       if (!onCanvas) return;
       e.preventDefault(); if (!spaceHeld) { spaceHeld = true; setCanvasCursor(); } return;
-    case 'a': state.tool = 'add'; if (state.calib) cancelCalib(); changed(); return;
-    case 'v': state.tool = 'select'; if (state.calib) cancelCalib(); changed(); return;
+    case 'a': setTool('add'); return;
+    case 'v': setTool('select'); return;
+    case 'd': setTool('auto'); return;
     case 's': toggle('snap'); return;
     case 'c': toggle('guides'); return;
     case 'g': toggle('grid'); return;
@@ -2234,6 +2624,7 @@ window.addEventListener('keydown', e => {
     case '1': if (d) zoomTo(d, 1); return;
     case '?': openModal('helpModal'); return;
     case 'Enter': {
+      if (onCanvas && d && state.tool === 'auto' && !state.calib) { e.preventDefault(); autoAccept(false); return; }
       if (!onCanvas || !d || !state.cursor) return;
       e.preventDefault();
       const { ix, iy } = state.cursor;
@@ -2305,6 +2696,6 @@ async function start(data) {
 if (hot && typeof hot.ready === 'function') hot.ready(start); else start((hot && hot.data) || {});
 
 // Expose a tiny inspection hook for scripted checks.
-window.__plotlift = { state, calibration, toData, buildExport, parseNum, fmtNum, cur, openFiles, addPoint: (x, y) => { const d = cur(); if (d) addPoint(d, x, y, false); } };
+window.__plotlift = { state, calibration, toData, buildExport, parseNum, fmtNum, cur, openFiles, setTool, autoAccept, addPoint: (x, y) => { const d = cur(); if (d) addPoint(d, x, y, false); }, detect: () => { const d = cur(); runDetect(d); return d._auto; } };
 })();
 </script>
