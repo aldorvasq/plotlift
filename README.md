@@ -17,7 +17,7 @@ It runs entirely in your browser. Nothing is installed, and your images and data
 
 ## How to use it
 
-1. **Open a plot.** Click **Open…**, drop a file onto the window, or paste a screenshot.
+1. **Upload a plot.** Plotlift opens on an upload screen: drop an image or PDF onto it, click **Choose a file…**, or paste a screenshot. To see a finished example first, click **Open the sample plot**.
 2. **Calibrate.** Follow the prompts: click a known point on the X axis and type its value, then a second one, then two on the Y axis. Choose Linear or Log for each axis.
 3. **Mark points.** Click on the data. Use the magnifier on the right for precision, and drag points to adjust them.
 4. **Export.** Pick the order, separator and columns, then copy or save.

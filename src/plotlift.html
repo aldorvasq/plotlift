@@ -165,14 +165,21 @@ kbd {
 }
 .tag.y { background: var(--axis-y); }
 
-.empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; }
-.empty-card {
-  max-width: 400px; display: grid; gap: 10px; padding: 22px 24px;
-  background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-panel);
+.empty { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; padding: 24px; overflow: auto; }
+.dropzone {
+  width: min(560px, 100%); display: grid; justify-items: center; gap: 10px; text-align: center;
+  padding: 40px 32px 30px; background: var(--panel); cursor: pointer;
+  border: 2px dashed var(--rule-2); border-radius: var(--r-panel);
 }
-.empty-card h2 { margin: 0; font-size: 16px; font-weight: 650; }
-.empty-card p { margin: 0; color: var(--ink-2); }
-.empty-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 4%, var(--panel)); outline: none; }
+.dropzone > svg { color: var(--accent); }
+.dropzone h2 { margin: 2px 0 0; font-size: 19px; font-weight: 650; }
+.dropzone p { margin: 0; color: var(--ink-2); max-width: 46ch; }
+.dropzone .dz-formats { font-size: 12px; color: var(--ink-3); }
+.btn-lg { height: 34px; padding: 0 16px; font-size: 13.5px; margin: 6px 0 2px; }
+.dz-sample { margin: 0; color: var(--ink-2); font-size: 12.5px; text-align: center; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.linkbtn:hover { color: var(--accent-strong); }
 .veil {
   position: absolute; inset: 8px; z-index: 8; display: grid; place-items: center; pointer-events: none;
   border: 2px dashed var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent);
@@ -458,14 +465,16 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
       </div>
 
       <div class="empty" id="empty" hidden>
-        <div class="empty-card">
-          <h2>No plot open</h2>
-          <p>Open a PNG, JPEG, GIF, WebP or SVG image, or a page from a PDF. You can also drop files here or paste a screenshot.</p>
-          <div class="empty-actions">
-            <button class="btn btn-primary" id="emptyOpen" data-icon="open">Open file…</button>
-            <button class="btn" id="emptySample" data-icon="flask">Open the sample plot</button>
-          </div>
+        <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Upload your plot: choose a file">
+          <svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
+            <path d="M24 30V8M15 17l9-9 9 9"/><path d="M8 28v12h32V28"/>
+          </svg>
+          <h2>Upload your plot</h2>
+          <p>Drag an image or a PDF onto this area, or choose a file from your computer. You can also paste a screenshot with <kbd data-mod></kbd> <kbd>V</kbd>.</p>
+          <button class="btn btn-primary btn-lg" id="emptyOpen" data-icon="open">Choose a file…</button>
+          <p class="dz-formats">PNG, JPEG, GIF, WebP, BMP, SVG or PDF. Saved Plotlift projects (.json) open here too.</p>
         </div>
+        <p class="dz-sample">New to Plotlift? <button class="linkbtn" id="emptySample">Open the sample plot</button> to see a finished example.</p>
       </div>
       <div class="veil" id="veil" hidden>Drop to open</div>
     </div>
@@ -534,7 +543,7 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
         <summary class="phead"><svg class="chev" data-icon-inline="chev"></svg>Points<span class="pill plain" id="ptPill">0</span></summary>
         <div class="sec-body">
           <div class="slist" id="chips"></div>
-          <div class="series-edit">
+          <div class="series-edit" id="seriesEdit">
             <input type="color" class="swatch" id="seriesColor" aria-label="Series colour">
             <input class="field" id="seriesName" autocomplete="off" spellcheck="false" aria-label="Series name">
             <button class="icon-btn" id="btnDelSeries" data-icon="trash" title="Delete this series" aria-label="Delete this series"></button>
@@ -546,7 +555,7 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
             </table>
             <div class="tbl-empty" id="tblEmpty">No points yet. Click on the plot to add one.</div>
           </div>
-          <div class="row">
+          <div class="row" id="pointActions">
             <button class="btn grow" id="btnRemoveLast" data-icon="backspace">Remove last</button>
             <button class="btn grow btn-danger" id="btnClear" data-icon="trash">Clear series</button>
           </div>
@@ -1875,10 +1884,10 @@ function sampleDoc() {
     return d;
   });
 }
-async function openSample(first) {
+async function openSample() {
   const d = await sampleDoc();
   addDoc(d, true);
-  toast(first ? 'This sample is pre-calibrated with example points. Click the red squares to finish Sample B, or open your own plot.' : 'Opened the sample plot.', { ms: first ? 7000 : 2500 });
+  toast('Sample plot opened. Its axes are already calibrated; click the red squares to finish Sample B.', { ms: 6000 });
 }
 
 /* ================= UI sync ================= */
@@ -1891,7 +1900,7 @@ function syncUI() {
   $('#btnRedo').disabled = !d || !d.redo.length;
   $('#miCloseTab').disabled = !d;
   $$('#btnCalibrate, #btnLock, #btnRemoveLast, #btnClear, #btnDelSeries, #seriesName, #seriesColor').forEach(el => { el.disabled = !d; });
-  $$('.axis-tag, .seg[data-scale] button').forEach(el => { el.disabled = !d; });
+  $$('.axis-tag, .seg[data-scale] button, #tools button').forEach(el => { el.disabled = !d; });
 }
 function syncTabs() {
   const html = state.docs.map(d => `<div class="tab${d.id === state.active ? ' on' : ''}" role="tab" tabindex="0" aria-selected="${d.id === state.active}" data-id="${d.id}" title="${esc(d.name)}">${d.thumb ? `<img src="${d.thumb}" alt="">` : ''}<span class="tab-name">${esc(d.name)}</span><button class="tab-x" data-close="${d.id}" aria-label="Close ${esc(d.name)}">${icon('x', 12, 2)}</button></div>`).join('');
@@ -1939,6 +1948,8 @@ function syncSeries(d) {
   const chips = $('#chips');
   const html = d ? d.series.map(s => `<button class="srow${s.id === d.activeSeries ? ' on' : ''}" data-sid="${s.id}" aria-pressed="${s.id === d.activeSeries}" title="Make ${esc(s.name)} the active series"><span class="sw" style="background:${s.color}"></span><span class="sn">${esc(s.name)}</span><span class="sc">${s.points.length} pt${s.points.length === 1 ? '' : 's'}</span></button>`).join('') + `<button class="srow add" id="btnAddSeries" title="Add a series">${icon('plus', 14, 2)}Add series</button>` : '';
   if (html !== lastChipsHTML) { chips.innerHTML = html; lastChipsHTML = html; }
+  // With no plot open there are no series to show or edit.
+  $('#chips').hidden = !d; $('#seriesEdit').hidden = !d; $('#pointActions').hidden = !d;
   const nameIn = $('#seriesName'), colorIn = $('#seriesColor');
   if (d) {
     const s = activeSeries(d);
@@ -2033,7 +2044,9 @@ $('#tabs').addEventListener('keydown', e => { const t = e.target.closest('.tab')
 $('#tabs').addEventListener('auxclick', e => { const t = e.target.closest('.tab'); if (t && e.button === 1) closeDoc(Number(t.dataset.id)); });
 const openPicker = () => fileInput.click();
 ['#btnOpen', '#btnTabAdd', '#emptyOpen'].forEach(s => $(s).addEventListener('click', openPicker));
-['#btnSample', '#emptySample'].forEach(s => $(s).addEventListener('click', () => openSample(false)));
+['#btnSample', '#emptySample'].forEach(s => $(s).addEventListener('click', () => openSample()));
+$('#dropzone').addEventListener('click', e => { if (!e.target.closest('button')) openPicker(); });
+$('#dropzone').addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); openPicker(); } });
 fileInput.addEventListener('change', () => { const files = [...fileInput.files]; fileInput.value = ''; openFiles(files); });
 $('#btnUndo').addEventListener('click', undo);
 $('#btnRedo').addEventListener('click', redo);
@@ -2287,7 +2300,7 @@ async function start(data) {
       return;
     } catch { /* fall through to the sample */ }
   }
-  await openSample(true);
+  changed();   // no plot yet: show the upload screen
 }
 if (hot && typeof hot.ready === 'function') hot.ready(start); else start((hot && hot.data) || {});
 
