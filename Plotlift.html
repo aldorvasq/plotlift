@@ -563,6 +563,7 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
           <div class="auto-color">
             <span class="auto-swatch" id="autoSwatch"></span>
             <span class="auto-color-text" id="autoColorText">Click on the data in the plot to pick its colour.</span>
+            <button class="btn btn-sm" id="autoPick" data-icon="dropper" title="Pick the data colour from the plot (I)" aria-pressed="false">Pick</button>
           </div>
           <div class="opts">
             <span class="flabel">Look for</span>
@@ -583,8 +584,19 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
               <input type="number" class="field num" id="autoStep" min="1" max="500" step="1" aria-label="Spacing between traced points in pixels">
               <span class="unit">px between points</span>
             </div>
+            <span class="flabel">Draw area</span>
+            <div class="seg" data-auto="shape" role="group" aria-label="Shape used to draw the search area"><button data-v="box">Box</button><button data-v="poly">Polygon</button><button data-v="free">Freehand</button></div>
+            <span class="flabel">New shape</span>
+            <div class="seg" data-auto="combine" role="group" aria-label="How a new shape combines with the search area"><button data-v="replace">Replace</button><button data-v="add">Add</button><button data-v="sub">Cut out</button></div>
             <span class="flabel">Search area</span>
-            <div class="opt-row"><span class="unit" id="autoAreaText">Whole image</span><button class="btn btn-sm" id="autoClearBox">Use whole image</button></div>
+            <div class="opt-row"><span class="unit" id="autoAreaText">Whole image</span></div>
+            <span class="flabel"></span>
+            <div class="opt-row">
+              <button class="btn btn-sm" id="autoUndoShape" title="Remove the most recent shape">Remove last shape</button>
+              <button class="btn btn-sm" id="autoClearBox" title="Search the whole image (Esc)">Clear area</button>
+            </div>
+            <span class="flabel"></span>
+            <span class="unit" id="autoAreaHint"></span>
             <span class="flabel"></span>
             <label class="check"><input type="checkbox" id="autoShowMask">Highlight matching pixels</label>
           </div>
@@ -676,7 +688,7 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
         <ol>
           <li><b>Open a plot.</b> An image file, a PDF page, a pasted screenshot, or a file dropped on the stage. Each one opens in its own tab.</li>
           <li><b>Calibrate.</b> Place X1 and X2 on two known points of the X axis, and Y1 and Y2 on the Y axis, then type their values. Pick Linear or Log for each axis. Rotated or skewed axes work too.</li>
-          <li><b>Mark points.</b> Click on the data. The magnifier shows the pixels under the cursor; drag a point to adjust it. Or use <b>Auto-detect</b>: click the data to pick its colour, drag a box around the plot area, and add the points it finds.</li>
+          <li><b>Mark points.</b> Click on the data. The magnifier shows the pixels under the cursor; drag a point to adjust it. Or use <b>Auto-detect</b>: click the data to pick its colour, outline the search area with a box, polygon or freehand shape, and add the points it finds.</li>
           <li><b>Export.</b> Choose the order, separator and error columns, then copy the text or save a .txt or .csv file.</li>
         </ol>
       </section>
@@ -690,6 +702,7 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
           <dt>Scroll</dt><dd>Pan, when zoomed in past the window</dd>
           <dt>Pinch, <span data-mod></span> + scroll</dt><dd>Zoom</dd>
           <dt><span data-alt></span> + click</dt><dd>Add a point with Snap flipped for that click</dd>
+          <dt>Auto-detect area</dt><dd>Box and Freehand: drag. Polygon: click each corner, then click the first corner or double-click to close. Hold ⇧ to add to the area, <span data-alt></span> to cut a piece out.</dd>
         </dl>
       </section>
       <section class="help-wide">
@@ -768,6 +781,7 @@ const ICONS = {
   fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   target: '<circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
   cursor: '<path d="M5.5 3.5 18.5 10l-5.6 1.9-1.9 5.6z"/>',
+  dropper: '<path d="M14.6 4.4a2.2 2.2 0 0 1 3.1 0l1.9 1.9a2.2 2.2 0 0 1 0 3.1l-2 2-5-5z"/><path d="m12.6 6.4-7.6 7.6V19h5l7.6-7.6"/>',
   scan: '<path d="M4 8.5V4h4.5M15.5 4H20v4.5M20 15.5V20h-4.5M8.5 20H4v-4.5"/><circle cx="9" cy="14" r="1.6" fill="currentColor"/><circle cx="12.5" cy="10.5" r="1.6" fill="currentColor"/><circle cx="16" cy="8.5" r="1.6" fill="currentColor"/>',
   magnet: '<path d="M5 4h4v7a3 3 0 0 0 6 0V4h4v7a7 7 0 0 1-14 0z"/><path d="M5 8h4M15 8h4"/>',
   guides: '<path d="M12 3v6M12 15v6M3 12h6M15 12h6"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
@@ -852,7 +866,9 @@ const state = {
   exp: Object.assign({ order: 'none', scope: 'active', sep: 'space', fmt: 'auto', digits: 6, header: true, errors: false, sigma: 0.5 }, store.get('export', {})),
   hover: null,
   cursor: null,          // { ix, iy, inside, kb }
-  autoOpts: Object.assign({ mode: 'markers', tol: 30, minSize: 3, maxSize: 40, split: true, step: 10, showMask: true }, store.get('auto', {})),
+  autoOpts: Object.assign({ mode: 'markers', tol: 30, minSize: 3, maxSize: 40, split: true, step: 10, showMask: true, shape: 'box', combine: 'replace' }, store.get('auto', {})),
+  autoPick: false,       // true while the next click picks the data colour
+  autoDraft: null,       // shape being drawn: { type: 'rect' | 'poly' | 'free', op, pts: [[x, y], ...] }
 };
 let uid = 1;
 const nid = () => uid++;
@@ -865,7 +881,7 @@ function makeDoc(name, img, src) {
     view: { scale: 1, ox: 0, oy: 0, fit: true },
     axes: { x1: { px: null, py: null, v: '' }, x2: { px: null, py: null, v: '' }, y1: { px: null, py: null, v: '' }, y2: { px: null, py: null, v: '' } },
     log: { x: false, y: false }, lockAxes: false,
-    auto: { color: null, box: null },
+    auto: { color: null, shapes: [] },   // shapes: [{ op: 'add' | 'sub', type, pts }] in image pixels
     series: [s], activeSeries: s.id, sel: null, undo: [], redo: [],
   };
 }
@@ -1327,8 +1343,15 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   if (pop.key && !state.calib) commitPopover(true);
   if (state.tool === 'auto' && !state.calib) {
-    // Auto-detect: a click picks the data colour, a drag draws the search area.
-    gesture = { type: 'autoPending', sx: p.x, sy: p.y, ix: clamp(ip.x, 0, d.w), iy: clamp(ip.y, 0, d.h) };
+    // Auto-detect: in Pick mode a click picks the data colour; otherwise the pointer draws the search area.
+    const act = autoAction(d), op = e.altKey ? 'sub' : e.shiftKey ? 'add' : state.autoOpts.combine;
+    const ix = clamp(ip.x, 0, d.w), iy = clamp(ip.y, 0, d.h);
+    if (act === 'free') {
+      state.autoDraft = { type: 'free', op, pts: [[ix, iy]] };
+      gesture = { type: 'autoFree', sx: p.x, sy: p.y, lx: p.x, ly: p.y };
+      return;
+    }
+    gesture = { type: 'autoPending', act, op, sx: p.x, sy: p.y, ix, iy, ox: d.view.ox, oy: d.view.oy };
     return;
   }
   if (!state.calib) {
@@ -1360,10 +1383,18 @@ canvas.addEventListener('pointermove', e => {
   if (gesture) {
     const dx = p.x - gesture.sx, dy = p.y - gesture.sy;
     if (gesture.type === 'pending' && Math.hypot(dx, dy) > 4) { gesture.type = 'pan'; setCanvasCursor(); }
-    if (gesture.type === 'autoPending' && Math.hypot(dx, dy) > 4) gesture.type = 'autoBox';
+    if (gesture.type === 'autoPending' && Math.hypot(dx, dy) > 4) {
+      // Dragging draws a box in Box mode; in Pick and Polygon modes it pans instead.
+      gesture.type = gesture.act === 'box' ? 'autoBox' : 'pan';
+      if (gesture.type === 'pan') setCanvasCursor();
+    }
     if (gesture.type === 'autoBox') {
-      d.auto.box = { x0: gesture.ix, y0: gesture.iy, x1: clamp(ip.x, 0, d.w), y1: clamp(ip.y, 0, d.h) };
-      changed();
+      const x0 = gesture.ix, y0 = gesture.iy, x1 = clamp(ip.x, 0, d.w), y1 = clamp(ip.y, 0, d.h);
+      state.autoDraft = { type: 'rect', op: gesture.op, pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] };
+    }
+    if (gesture.type === 'autoFree' && state.autoDraft && Math.hypot(p.x - gesture.lx, p.y - gesture.ly) >= 2) {
+      state.autoDraft.pts.push([clamp(ip.x, 0, d.w), clamp(ip.y, 0, d.h)]);
+      gesture.lx = p.x; gesture.ly = p.y;
     }
     if (gesture.type === 'pan') {
       d.view.ox = gesture.ox + dx; d.view.oy = gesture.oy + dy; d.view.fit = false;
@@ -1403,10 +1434,16 @@ function endPointer(e, cancelled) {
     changed();
   } else if (g.type === 'autoPending') {
     const p = evPos(e), ip = toImg(d, p.x, p.y);
-    if (ip.x >= 0 && ip.y >= 0 && ip.x <= d.w && ip.y <= d.h) pickColour(d, ip.x, ip.y);
-  } else if (g.type === 'autoBox') {
-    const b = d.auto.box;
-    if (b && (Math.abs(b.x1 - b.x0) < 3 || Math.abs(b.y1 - b.y0) < 3)) d.auto.box = null;
+    const inside = ip.x >= 0 && ip.y >= 0 && ip.x <= d.w && ip.y <= d.h;
+    if (g.act === 'pick') { if (inside) pickColour(d, ip.x, ip.y); }
+    else if (g.act === 'poly') polyClick(d, clamp(ip.x, 0, d.w), clamp(ip.y, 0, d.h), g.op, p);
+  } else if (g.type === 'autoBox' || g.type === 'autoFree') {
+    const D = state.autoDraft; state.autoDraft = null;
+    if (D) {
+      const xs = D.pts.map(q => q[0]), ys = D.pts.map(q => q[1]);
+      const big = Math.max(...xs) - Math.min(...xs) >= 3 && Math.max(...ys) - Math.min(...ys) >= 3;
+      if (big && D.pts.length >= 3) commitShape(d, D);
+    }
     changed();
   }
   setCanvasCursor(hitTest(d, evPos(e).x, evPos(e).y));
@@ -1570,13 +1607,63 @@ function imageDataOf(d) {
   if (!d._idata) d._idata = pixelCtx(d).getImageData(0, 0, d.w, d.h);
   return d._idata;
 }
-function autoRegion(d) {
-  const b = d.auto.box;
-  if (!b) return { x0: 0, y0: 0, x1: d.w, y1: d.h };
-  return {
-    x0: clamp(Math.floor(Math.min(b.x0, b.x1)), 0, d.w), y0: clamp(Math.floor(Math.min(b.y0, b.y1)), 0, d.h),
-    x1: clamp(Math.ceil(Math.max(b.x0, b.x1)), 0, d.w), y1: clamp(Math.ceil(Math.max(b.y0, b.y1)), 0, d.h),
-  };
+// Current pointer action in the Auto-detect tool.
+function autoAction(d) { return !d.auto.color || state.autoPick ? 'pick' : state.autoOpts.shape; }
+// Adds a finished shape to the search area. 'replace' starts a new area; 'add' and 'sub' combine with it.
+function commitShape(d, D) {
+  if (D.op === 'replace') d.auto.shapes = [];
+  d.auto.shapes.push({ op: D.op === 'sub' ? 'sub' : 'add', type: D.type, pts: D.pts.map(([x, y]) => [clamp(x, 0, d.w), clamp(y, 0, d.h)]) });
+}
+let lastPolyClick = null;
+function polyClick(d, x, y, op, sp) {
+  const D = state.autoDraft, now = performance.now();
+  const dbl = lastPolyClick && now - lastPolyClick.t < 400 && Math.hypot(sp.x - lastPolyClick.x, sp.y - lastPolyClick.y) < 6;
+  lastPolyClick = { t: now, x: sp.x, y: sp.y };
+  if (!D || D.type !== 'poly') { state.autoDraft = { type: 'poly', op, pts: [[x, y]] }; changed(); return; }
+  const f = toScr(d, D.pts[0][0], D.pts[0][1]);
+  if (dbl || (D.pts.length >= 3 && Math.hypot(sp.x - f.x, sp.y - f.y) <= 9)) { closePoly(d); return; }
+  D.pts.push([x, y]);
+  changed();
+}
+function closePoly(d) {
+  const D = state.autoDraft;
+  if (!D || D.type !== 'poly') return;
+  if (D.pts.length < 3) { toast('A polygon needs at least three corners.'); return; }
+  commitShape(d, D);
+  state.autoDraft = null; lastPolyClick = null;
+  changed();
+}
+const shapePath = (g, T, pts) => { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(T.x(x), T.y(y)) : g.moveTo(T.x(x), T.y(y))); g.closePath(); };
+// The search area as a pixel mask over its bounding box. With no 'add' shapes the base is the whole image.
+function areaInfo(d) {
+  const shapes = d.auto.shapes, sig = JSON.stringify(shapes);
+  if (d._area && d._area.sig === sig) return d._area;
+  const adds = shapes.filter(sh => sh.op === 'add');
+  let x0 = 0, y0 = 0, x1 = d.w, y1 = d.h;
+  if (adds.length) {
+    const xs = adds.flatMap(sh => sh.pts.map(q => q[0])), ys = adds.flatMap(sh => sh.pts.map(q => q[1]));
+    x0 = clamp(Math.floor(Math.min(...xs)), 0, d.w); x1 = clamp(Math.ceil(Math.max(...xs)), 0, d.w);
+    y0 = clamp(Math.floor(Math.min(...ys)), 0, d.h); y1 = clamp(Math.ceil(Math.max(...ys)), 0, d.h);
+  }
+  const rw = Math.max(0, x1 - x0), rh = Math.max(0, y1 - y0);
+  let mask = null, count = rw * rh;
+  if (shapes.length && rw && rh) {
+    const cv = document.createElement('canvas'); cv.width = rw; cv.height = rh;
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    const T = { x: x => x - x0, y: y => y - y0 };
+    g.fillStyle = '#000';
+    if (!adds.length) g.fillRect(0, 0, rw, rh);
+    for (const sh of shapes) { g.globalCompositeOperation = sh.op === 'add' ? 'source-over' : 'destination-out'; shapePath(g, T, sh.pts); g.fill(); }
+    const a = g.getImageData(0, 0, rw, rh).data;
+    mask = new Uint8Array(rw * rh); count = 0;
+    for (let i = 0; i < mask.length; i++) if (a[i * 4 + 3] > 127) { mask[i] = 1; count++; }
+  }
+  return (d._area = { sig, R0: { x0, y0, x1, y1 }, rw, rh, mask, count });
+}
+function inArea(A, px, py) {
+  const x = Math.floor(px) - A.R0.x0, y = Math.floor(py) - A.R0.y0;
+  if (x < 0 || y < 0 || x >= A.rw || y >= A.rh) return false;
+  return !A.mask || A.mask[y * A.rw + x] === 1;
 }
 const hex2 = n => n.toString(16).padStart(2, '0');
 const rgbHex = c => '#' + c.map(hex2).join('').toUpperCase();
@@ -1605,6 +1692,7 @@ function pickColour(d, x, y) {
   pick = pick.length ? pick.slice(0, Math.max(1, Math.ceil(pick.length * 0.4))) : [win.find(p => p.o === (cy * W + cx) * 4) || win[0]];
   const c = [0, 1, 2].map(k => Math.round(pick.reduce((sum, p) => sum + data[p.o + k], 0) / pick.length));
   d.auto.color = c;
+  state.autoPick = false;
   changed();
 }
 function findMarkers(res, o) {
@@ -1631,21 +1719,20 @@ function findMarkers(res, o) {
   const minS = Math.max(1, Number(o.minSize) || 1), maxS = Math.max(minS, Number(o.maxSize) || 40);
   const ok = comps.filter(c => Math.max(c.w, c.h) >= minS && Math.min(c.w, c.h) >= Math.min(minS, 2));
   for (const c of ok) { let sx = 0, sy = 0; for (const j of c.pix) { sx += j % rw; sy += (j / rw) | 0; } c.cx = R.x0 + sx / c.pix.length + 0.5; c.cy = R.y0 + sy / c.pix.length + 0.5; }
-  const B0 = res.R0;
-  const sized = ok.filter(c => Math.max(c.w, c.h) <= maxS && c.cx >= B0.x0 && c.cx <= B0.x1 && c.cy >= B0.y0 && c.cy <= B0.y1);
+  const inside = p => inArea(res.A, p.px, p.py);
+  const sized = ok.filter(c => Math.max(c.w, c.h) <= maxS && inside({ px: c.cx, py: c.cy }));
   const areas = sized.map(c => c.pix.length).sort((a, b) => a - b);
   const typical = areas.length ? areas[areas.length >> 1] : 0;
   const centre = c => ({ px: c.cx, py: c.cy });
   const pts = [];
   let skippedBig = 0;
-  const side = Math.sqrt(typical), B = res.R0;
-  const inBox = p => p.px >= B.x0 && p.px <= B.x1 && p.py >= B.y0 && p.py <= B.y1;
+  const side = Math.sqrt(typical);
   for (const c of ok) {
-    if (!inBox(centre(c))) continue;
+    if (!inside(centre(c))) continue;
     let k = o.split && typical >= 4 && sized.length >= 3 ? Math.round(c.pix.length / typical) : 1;
     // Only blobs as thick and compact as touching markers are split; thin lines and text are not.
     if (k >= 2 && !(k <= 16 && Math.min(c.w, c.h) >= 0.6 * side && Math.max(c.w, c.h) <= (k + 0.5) * side * 1.3 && c.pix.length / (c.w * c.h) >= 0.25)) k = 1;
-    if (k >= 2) pts.push(...splitBlob(c.pix, k, rw, R).filter(inBox));
+    if (k >= 2) pts.push(...splitBlob(c.pix, k, rw, R).filter(inside));
     else if (Math.max(c.w, c.h) > maxS) skippedBig++;
     else pts.push(centre(c));
   }
@@ -1716,11 +1803,14 @@ function runDetect(d) {
   if (!col) return;
   let img;
   try { img = imageDataOf(d); } catch { d._auto = { error: 'This image can’t be read for auto-detection.', points: [] }; return; }
-  const data = img.data, W = d.w, R0 = autoRegion(d);
-  const m = o.mode === 'markers' && d.auto.box ? Math.ceil(Math.min(Number(o.maxSize) || 40, 80) / 2) : 0;
+  const data = img.data, W = d.w, A = areaInfo(d), R0 = A.R0;
+  if (A.rw < 3 || A.rh < 3 || A.count < 9) { d._auto = { error: 'The search area is empty or too small. Draw a larger area, or clear it to search the whole image.', points: [] }; return; }
+  // Markers are matched a little beyond the area so one on its edge is measured whole;
+  // a marker counts if its centre is inside the area. Lines only use pixels inside the area.
+  const m = o.mode === 'markers' && d.auto.shapes.length ? Math.ceil(Math.min(Number(o.maxSize) || 40, 80) / 2) : 0;
   const R = { x0: Math.max(0, R0.x0 - m), y0: Math.max(0, R0.y0 - m), x1: Math.min(d.w, R0.x1 + m), y1: Math.min(d.h, R0.y1 + m) };
   const rw = R.x1 - R.x0, rh = R.y1 - R.y0;
-  if (R0.x1 - R0.x0 < 3 || R0.y1 - R0.y0 < 3) { d._auto = { error: 'The search area is too small. Drag a larger box.', points: [] }; return; }
+  const lineMode = o.mode === 'line';
   const tol = clamp(Number(o.tol) || 30, 1, 100) * 2.2, tol2 = tol * tol;
   // Distance is measured in luma/chroma space with chroma counted twice, so grey
   // anti-aliasing around black text does not match coloured data of similar brightness.
@@ -1734,11 +1824,13 @@ function runDetect(d) {
       const r = data[q], g = data[q + 1], b = data[q + 2];
       const Y = 0.299 * r + 0.587 * g + 0.114 * b;
       const dY = Y - pY, dB = 2 * (0.564 * (b - Y) - pB), dR = 2 * (0.713 * (r - Y) - pR);
-      if (dY * dY + dB * dB + dR * dR <= tol2) { mask[y * rw + x] = 1; count++; }
+      if (dY * dY + dB * dB + dR * dR > tol2) continue;
+      if (lineMode && A.mask && !A.mask[(y + R.y0 - R0.y0) * A.rw + (x + R.x0 - R0.x0)]) continue;
+      mask[y * rw + x] = 1; count++;
     }
   }
-  const res = { R, R0, rw, rh, mask, count, points: [] };
-  if (count > 0.35 * (R0.x1 - R0.x0) * (R0.y1 - R0.y0)) res.warn = 'Over a third of the search area matches this colour. Lower the tolerance, or click on the data again.';
+  const res = { R, A, rw, rh, mask, count, points: [] };
+  if (count > 0.35 * A.count) res.warn = 'Over a third of the search area matches this colour. Lower the tolerance, or click on the data again.';
   if (count) { if (o.mode === 'line') traceLine(d, res, o); else findMarkers(res, o); }
   // Drop detections that sit on points already in the active series, and order the rest along X.
   const c = calibration(d), s = activeSeries(d);
@@ -1765,25 +1857,57 @@ function autoAccept(newSeries) {
   toast(`Added ${list.length} point${list.length === 1 ? '' : 's'} to ${s.name}.`, { action: { label: 'Undo', fn: undo } });
   changed();
 }
-function drawAutoLayer(g, d, T, mode) {
-  const R = autoRegion(d), r = d._auto, box = d.auto.box;
-  if (box && mode === 'main') {
-    g.save();
-    g.fillStyle = 'rgba(20,24,28,.30)';
-    g.beginPath();
-    g.rect(T.x(0), T.y(0), d.w * T.s, d.h * T.s);
-    g.rect(T.x(R.x0), T.y(R.y0), (R.x1 - R.x0) * T.s, (R.y1 - R.y0) * T.s);
-    g.fill('evenodd');
-    g.restore();
+const dimBufs = {};
+// Darkens the image outside the search area, using an offscreen layer so cut-outs and overlaps combine correctly.
+function drawAreaDim(g, d, T, mode) {
+  const W = mode === 'main' ? cw : lw, H = mode === 'main' ? ch : lh;
+  const buf = dimBufs[mode] || (dimBufs[mode] = document.createElement('canvas'));
+  const pw = Math.max(1, Math.round(W * dpr)), ph = Math.max(1, Math.round(H * dpr));
+  if (buf.width !== pw || buf.height !== ph) { buf.width = pw; buf.height = ph; }
+  const b = buf.getContext('2d');
+  b.setTransform(dpr, 0, 0, dpr, 0, 0); b.clearRect(0, 0, W, H);
+  const shade = 'rgba(20,24,28,.34)', shapes = d.auto.shapes;
+  b.save();
+  b.beginPath(); b.rect(T.x(0), T.y(0), d.w * T.s, d.h * T.s); b.clip();
+  if (shapes.some(sh => sh.op === 'add')) { b.fillStyle = shade; b.fillRect(T.x(0), T.y(0), d.w * T.s, d.h * T.s); }
+  for (const sh of shapes) {
+    b.globalCompositeOperation = sh.op === 'add' ? 'destination-out' : 'source-over';
+    b.fillStyle = sh.op === 'add' ? '#000' : shade;
+    shapePath(b, T, sh.pts); b.fill();
   }
+  b.restore();
+  g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(buf, 0, 0); g.restore();
+}
+function drawAutoLayer(g, d, T, mode) {
+  const r = d._auto, shapes = d.auto.shapes, D = state.autoDraft;
   if (r && r.overlay && state.autoOpts.showMask) {
     g.save(); g.imageSmoothingEnabled = false; g.globalAlpha = 0.8;
     g.drawImage(r.overlay, T.x(r.R.x0), T.y(r.R.y0), r.rw * T.s, r.rh * T.s);
     g.restore();
   }
-  if (box) {
-    g.save(); g.setLineDash([5, 4]);
-    haloStroke(g, () => { g.beginPath(); g.rect(T.x(R.x0), T.y(R.y0), (R.x1 - R.x0) * T.s, (R.y1 - R.y0) * T.s); }, '#1F5FAD', 1.4, 3.5);
+  if (shapes.length) drawAreaDim(g, d, T, mode);
+  g.save(); g.setLineDash([5, 4]); g.lineJoin = 'round';
+  for (const sh of shapes) haloStroke(g, () => shapePath(g, T, sh.pts), sh.op === 'add' ? '#1F5FAD' : '#B42318', 1.4, 3.5);
+  g.restore();
+  if (D && D.pts.length) {
+    const col = D.op === 'sub' ? '#B42318' : '#1F5FAD';
+    g.save(); g.lineJoin = 'round'; g.lineCap = 'round';
+    const pts = D.pts.slice();
+    const cu = state.cursor;
+    if (D.type === 'poly' && cu && cu.inside) pts.push([clamp(cu.ix, 0, d.w), clamp(cu.iy, 0, d.h)]);
+    const open = () => { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(T.x(x), T.y(y)) : g.moveTo(T.x(x), T.y(y))); if (D.type === 'rect') g.closePath(); };
+    haloStroke(g, open, col, 1.6, 4);
+    if (D.type === 'poly') {
+      D.pts.forEach(([x, y], i) => {
+        const sx = T.x(x), sy = T.y(y), first = i === 0;
+        g.fillStyle = '#fff'; g.fillRect(sx - 4, sy - 4, 8, 8);
+        g.strokeStyle = col; g.lineWidth = 1.5; g.strokeRect(sx - 3.5, sy - 3.5, 7, 7);
+        if (first && D.pts.length >= 3 && cu && cu.inside && mode === 'main') {
+          const f = toScr(d, x, y), c2 = toScr(d, cu.ix, cu.iy);
+          if (Math.hypot(f.x - c2.x, f.y - c2.y) <= 9) { g.beginPath(); g.arc(sx, sy, 8, 0, TAU); g.strokeStyle = col; g.lineWidth = 2; g.stroke(); }
+        }
+      });
+    }
     g.restore();
   }
   if (r && r.points && r.points.length) {
@@ -1800,23 +1924,29 @@ function syncAuto(d) {
   sec.hidden = !on;
   if (!on) return;
   const o = state.autoOpts, A = d.auto;
-  const sig = JSON.stringify([A.color, A.box, o, d.activeSeries, activeSeries(d).points.length, o.mode === 'line' ? [d.axes, d.log] : 0]);
+  const sig = JSON.stringify([A.color, A.shapes, o.mode, o.tol, o.minSize, o.maxSize, o.split, o.step, d.activeSeries, activeSeries(d).points.length, o.mode === 'line' ? [d.axes, d.log] : 0]);
   if (sig !== d._autoSig) { d._autoSig = sig; scheduleDetect(d); }
   const sw = $('#autoSwatch');
   sw.style.background = A.color ? rgbHex(A.color) : '';
-  $('#autoColorText').textContent = A.color ? `Data colour ${rgbHex(A.color)}. Click the plot again to change it.` : 'Click on the data in the plot to pick its colour.';
-  $$('.seg[data-auto] button').forEach(b => b.setAttribute('aria-pressed', String(o.mode === b.dataset.v)));
+  const picking = autoAction(d) === 'pick';
+  $('#autoColorText').textContent = picking ? 'Click on a data marker or line in the plot to pick its colour.' : `Data colour ${rgbHex(A.color)}`;
+  $('#autoPick').setAttribute('aria-pressed', String(picking));
+  $$('.seg[data-auto]').forEach(seg => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(o[seg.dataset.auto] === b.dataset.v && !(seg.dataset.auto === 'shape' && picking)))));
   $$('[data-auto-only]').forEach(el => { el.hidden = el.dataset.autoOnly !== o.mode; });
   const setNum = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = v; };
   setNum('#autoTol', o.tol); $('#autoTolVal').textContent = o.tol;
   setNum('#autoMin', o.minSize); setNum('#autoMax', o.maxSize); setNum('#autoStep', o.step);
   $('#autoSplit').checked = !!o.split; $('#autoShowMask').checked = !!o.showMask;
-  const R = autoRegion(d);
-  $('#autoAreaText').textContent = A.box ? `Box, ${R.x1 - R.x0} × ${R.y1 - R.y0} px` : 'Whole image';
-  $('#autoClearBox').disabled = !A.box;
+  const nAdd = A.shapes.filter(sh => sh.op === 'add').length, nSub = A.shapes.length - nAdd;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  $('#autoAreaText').textContent = !A.shapes.length ? 'Whole image'
+    : [nAdd ? plural(nAdd, 'shape') : 'Whole image', nSub ? plural(nSub, 'cut-out') : ''].filter(Boolean).join(', ') + `, ${areaInfo(d).count.toLocaleString()} px`;
+  $('#autoClearBox').disabled = !A.shapes.length; $('#autoUndoShape').disabled = !A.shapes.length;
+  const how = { box: 'Drag a box', poly: 'Click each corner; click the first corner or double-click to close', free: 'Drag around the data' }[o.shape];
+  $('#autoAreaHint').textContent = `${how}. Hold ⇧ to add, ${ALT} to cut out.`;
   const r = d._auto, msg = $('#autoMsg'), n = r && r.points ? r.points.length : 0;
   let text = '', cls = 'auto-result';
-  if (!A.color) text = 'Pick a colour to start. Then drag a box around the data so the axes, labels and legend are left out.';
+  if (!A.color) text = 'Pick a colour to start. Then outline the data so the axes, labels and legend are left out.';
   else if (!r) text = 'Searching…';
   else if (r.error) { text = r.error; cls += ' bad'; }
   else {
@@ -2102,6 +2232,7 @@ function addDoc(d, quiet) {
 }
 function setActiveDoc(id) {
   if (state.active === id) return;
+  state.autoDraft = null;
   state.active = id; state.cursor = null; state.hover = null; state.calib = null; closePopover();
   const d = cur(); if (d && d.view.fit) fitView(d);
   changed();
@@ -2371,9 +2502,12 @@ function syncBanner(d) {
     const r = d._auto, n = r && r.points ? r.points.length : 0;
     ban.className = 'infobar';
     $('#bannerStep').textContent = 'Auto-detect';
-    $('#bannerText').textContent = !d.auto.color ? 'Click on a data marker or line to pick its colour.'
+    const D = state.autoDraft, act = autoAction(d);
+    const draw = { box: 'drag a box around the data', poly: 'click around the data to outline it', free: 'drag around the data to outline it' }[state.autoOpts.shape];
+    $('#bannerText').textContent = act === 'pick' ? 'Click on a data marker or line to pick its colour.'
+      : D && D.type === 'poly' ? `Polygon: ${D.pts.length} corner${D.pts.length === 1 ? '' : 's'}. Click the first corner, double-click or press Enter to close. Backspace removes the last corner.`
       : !r ? 'Searching…'
-      : n && !d.auto.box ? `Found ${n} new point${n === 1 ? '' : 's'}. Drag a box around the data to leave out the axes, labels and legend.`
+      : n && !d.auto.shapes.length ? `Found ${n} new point${n === 1 ? '' : 's'}. To leave out the axes, labels and legend, ${draw}.`
       : n ? `Found ${n} new point${n === 1 ? '' : 's'}. Check the crosses on the plot, then add them.`
       : 'No new points found. Adjust the tolerance or the search area.';
     keep.hidden = true;
@@ -2394,7 +2528,7 @@ function syncStatus() {
   const hint = $('#statusHint');
   if (!d) hint.textContent = 'Open an image or a PDF page to begin. You can also drop or paste one.';
   else if (state.calib) hint.textContent = `Calibrating ${AXIS_LABEL[state.calib.key]}: ${STEP_TEXT[state.calib.key]} Esc cancels.`;
-  else if (state.tool === 'auto') hint.textContent = `Auto-detect: click picks the data colour · drag draws the search area · Enter adds the points · Esc clears the area · hold Space to pan`;
+  else if (state.tool === 'auto') hint.textContent = `Auto-detect: I picks a colour · ⇧ adds to the area · ${ALT} cuts out · Enter adds the points · Esc clears the area · hold Space to pan`;
   else if (state.tool === 'add') hint.textContent = `Click to add a point to ${activeSeries(d).name} · ${MOD}-scroll or pinch to zoom · right-click a point to delete · press ? for shortcuts`;
   else hint.textContent = `Click a point to select it · drag to move · ${IS_MAC ? '⌫' : 'Delete'} removes it · arrows nudge by one screen pixel`;
   $('#stSize').textContent = d ? `${d.w} × ${d.h} px` : '';
@@ -2446,6 +2580,7 @@ $$('.modal').forEach(m => {
 
 function setTool(t) {
   state.tool = t;
+  state.autoDraft = null; state.autoPick = false;
   if (state.calib) cancelCalib();
   const d = cur(); if (d) d.sel = null;
   state.hover = null;
@@ -2533,7 +2668,13 @@ $('#ptsBody').addEventListener('mouseleave', () => { state.hover = null; markHov
 
 // auto-detect panel
 function setAuto(k, v) { state.autoOpts[k] = v; store.set('auto', state.autoOpts); changed(); }
-$$('.seg[data-auto]').forEach(seg => seg.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setAuto(seg.dataset.auto, b.dataset.v); }));
+$$('.seg[data-auto]').forEach(seg => seg.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (seg.dataset.auto === 'shape') { state.autoPick = false; state.autoDraft = null; }
+  setAuto(seg.dataset.auto, b.dataset.v);
+}));
+$('#autoPick').addEventListener('click', () => { const d = cur(); if (!d) return; state.autoPick = !(autoAction(d) === 'pick') || !d.auto.color; state.autoDraft = null; changed(); canvas.focus({ preventScroll: true }); });
+$('#autoUndoShape').addEventListener('click', () => { const d = cur(); if (d && d.auto.shapes.length) { d.auto.shapes.pop(); changed(); } });
 $('#autoTol').addEventListener('input', e => setAuto('tol', Number(e.target.value)));
 [['#autoMin', 'minSize'], ['#autoMax', 'maxSize'], ['#autoStep', 'step']].forEach(([id, k]) => {
   $(id).addEventListener('input', e => { const v = Number(e.target.value); if (v >= 1) setAuto(k, v); });
@@ -2541,7 +2682,7 @@ $('#autoTol').addEventListener('input', e => setAuto('tol', Number(e.target.valu
 });
 $('#autoSplit').addEventListener('change', e => setAuto('split', e.target.checked));
 $('#autoShowMask').addEventListener('change', e => setAuto('showMask', e.target.checked));
-$('#autoClearBox').addEventListener('click', () => { const d = cur(); if (d) { d.auto.box = null; changed(); } });
+$('#autoClearBox').addEventListener('click', () => { const d = cur(); if (d) { d.auto.shapes = []; state.autoDraft = null; changed(); } });
 $('#autoAdd').addEventListener('click', () => autoAccept(false));
 $('#autoNew').addEventListener('click', () => autoAccept(true));
 
@@ -2595,7 +2736,9 @@ window.addEventListener('keydown', e => {
     if (pop.key) { closePopover(); if (state.calib) cancelCalib(); else changed(); return; }
     if (state.calib) { cancelCalib(); return; }
     const d = cur();
-    if (d && state.tool === 'auto' && d.auto.box) { d.auto.box = null; changed(); return; }
+    if (d && state.tool === 'auto' && state.autoDraft) { state.autoDraft = null; changed(); return; }
+    if (d && state.tool === 'auto' && state.autoPick && d.auto.color) { state.autoPick = false; changed(); return; }
+    if (d && state.tool === 'auto' && d.auto.shapes.length) { d.auto.shapes = []; changed(); return; }
     if (d && d.sel) { d.sel = null; changed(); }
     return;
   }
@@ -2621,6 +2764,7 @@ window.addEventListener('keydown', e => {
     case 'a': setTool('add'); return;
     case 'v': setTool('select'); return;
     case 'd': setTool('auto'); return;
+    case 'i': if (d && state.tool === 'auto') { state.autoPick = true; state.autoDraft = null; changed(); } return;
     case 's': toggle('snap'); return;
     case 'c': toggle('guides'); return;
     case 'g': toggle('grid'); return;
@@ -2631,7 +2775,11 @@ window.addEventListener('keydown', e => {
     case '1': if (d) zoomTo(d, 1); return;
     case '?': openModal('helpModal'); return;
     case 'Enter': {
-      if (onCanvas && d && state.tool === 'auto' && !state.calib) { e.preventDefault(); autoAccept(false); return; }
+      if (onCanvas && d && state.tool === 'auto' && !state.calib) {
+        e.preventDefault();
+        if (state.autoDraft && state.autoDraft.type === 'poly') closePoly(d); else autoAccept(false);
+        return;
+      }
       if (!onCanvas || !d || !state.cursor) return;
       e.preventDefault();
       const { ix, iy } = state.cursor;
@@ -2642,6 +2790,10 @@ window.addEventListener('keydown', e => {
     case 'Backspace': case 'Delete': {
       if (!d) return;
       e.preventDefault();
+      if (state.tool === 'auto' && state.autoDraft && state.autoDraft.type === 'poly') {
+        state.autoDraft.pts.pop(); if (!state.autoDraft.pts.length) state.autoDraft = null;
+        changed(); return;
+      }
       if (d.sel && d.sel.kind === 'point') deletePoint(d, d.sel.sid, d.sel.pid); else removeLast();
       return;
     }
