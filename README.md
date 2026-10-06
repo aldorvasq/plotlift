@@ -14,6 +14,7 @@ It runs entirely in your browser. Nothing is installed, and your images and data
 - **Auto-detect** finds data points by colour: click the data to pick its colour, outline the search area, and Plotlift places a point at the centre of each marker (splitting touching markers) or traces a line at a spacing you choose. The search area can be drawn as a box, a polygon or a freehand shape, and shapes combine: hold Shift to add to the area or Option/Alt to cut a piece out of it, for example to leave out a legend that sits inside the plot. You review the proposed points before adding them.
 - Several data series per plot, each with its own colour. Points can be dragged, nudged with the arrow keys, deleted, undone and redone.
 - Exports points in click order or sorted by X or Y, as space-, tab- or comma-separated text, with optional error columns (dx, dy). Copy to the clipboard or save as .txt or .csv.
+- Exports one series or all of them at once. With all series you choose the layout: separate blocks (gnuplot style), one table with a series column, or side by side with an x and y column pair per series (handy for Excel or Origin). **Save each series as its own file** packs one file per series into a .zip.
 - Saves and reopens whole projects (images, axes and points) as a single .json file.
 
 ## How to use it

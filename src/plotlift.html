@@ -631,7 +631,9 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
             <span class="flabel">Order</span>
             <div class="seg" data-opt="order" role="group" aria-label="Point order"><button data-v="none">As clicked</button><button data-v="x">By X</button><button data-v="y">By Y</button></div>
             <span class="flabel">Series</span>
-            <div class="seg" data-opt="scope" role="group" aria-label="Series to export"><button data-v="active">Active</button><button data-v="all">All</button></div>
+            <div class="seg" data-opt="scope" role="group" aria-label="Series to export"><button data-v="active">This series</button><button data-v="all">All series</button></div>
+            <span class="flabel" data-all-only>Layout</span>
+            <div class="seg" data-opt="layout" data-all-only role="group" aria-label="How several series are laid out"><button data-v="blocks">Blocks</button><button data-v="table">Table</button><button data-v="side">Side by side</button></div>
             <span class="flabel">Separator</span>
             <div class="seg" data-opt="sep" role="group" aria-label="Column separator"><button data-v="space">Space</button><button data-v="tab">Tab</button><button data-v="comma">Comma</button></div>
             <span class="flabel">Numbers</span>
@@ -657,6 +659,7 @@ tr:hover .row-del, tr.sel .row-del, .row-del:focus-visible { opacity: 1; }
             <button class="btn btn-primary" id="btnSaveTxt" data-icon="download">.txt</button>
             <button class="btn" id="btnSaveCsv" data-icon="download">.csv</button>
           </div>
+          <button class="btn" id="btnSaveZip" data-icon="download" data-all-only title="One file per series, in the separator chosen above, packed in a .zip">Save each series as its own file (.zip)</button>
         </div>
       </details>
     </div>
@@ -856,7 +859,7 @@ const state = {
   lines: store.get('lines', false),
   calib: null,          // { key, guided }
   loupeZoom: store.get('loupeZoom', 8),
-  exp: Object.assign({ order: 'none', scope: 'active', sep: 'space', fmt: 'auto', digits: 6, header: true, errors: false, sigma: 0.5 }, store.get('export', {})),
+  exp: Object.assign({ order: 'none', scope: 'active', layout: 'blocks', sep: 'space', fmt: 'auto', digits: 6, header: true, errors: false, sigma: 0.5 }, store.get('export', {})),
   hover: null,
   cursor: null,          // { ix, iy, inside, kb }
   autoOpts: Object.assign({ mode: 'markers', tol: 30, minSize: 3, maxSize: 40, split: true, step: 10, showMask: true, shape: 'box', combine: 'replace' }, store.get('auto', {})),
@@ -2051,27 +2054,45 @@ function seriesRows(d, s, c) {
   return rows;
 }
 const csvCell = s => /[",\n]/.test(s) ? '"' + String(s).replace(/"/g, '""') + '"' : String(s);
-function buildExport(d, forceCsv) {
+// Builds the export text. With several series the layout is one of:
+//   blocks: one block per series with its own header, separated by blank lines (gnuplot "index" style)
+//   table:  one table with the series name in the first column
+//   side:   series side by side, an x and y column pair for each, padded where a series is shorter
+// opt.csv forces comma separation; opt.list exports just those series (used for one file per series).
+function buildExport(d, opt = {}) {
   const e = state.exp, c = calibration(d);
   if (!c.ok) return { text: '', rows: 0, msg: c.msg };
-  const csv = forceCsv || e.sep === 'comma';
+  const csv = opt.csv || e.sep === 'comma';
   const sep = csv ? ',' : (e.sep === 'tab' ? '\t' : ' ');
-  const list = e.scope === 'all' ? d.series.filter(s => s.points.length) : [activeSeries(d)];
-  const multi = e.scope === 'all' && list.length > 1;
+  const list = opt.list || (e.scope === 'all' ? d.series.filter(s => s.points.length) : [activeSeries(d)]);
+  const multi = list.length > 1;
+  const layout = multi ? (e.layout || 'blocks') : 'blocks';
   const cols = e.errors ? ['x', 'y', 'dx', 'dy'] : ['x', 'y'];
   const cells = r => [r.x, r.y].concat(e.errors ? [r.dx, r.dy] : []).map(v => fmtNum(v));
-  const out = []; let n = 0;
-  if (csv) {
-    if (e.header) out.push((multi ? ['series', ...cols] : cols).join(','));
-    for (const s of list) for (const r of seriesRows(d, s, c)) { out.push((multi ? [csvCell(s.name)] : []).concat(cells(r)).join(',')); n++; }
+  const com = csv ? '' : '# ';
+  const label = name => csv ? csvCell(name) : sep === ' ' ? String(name).replace(/\s+/g, '_') : String(name);
+  const quoted = name => csv ? csvCell(name) : sep === ' ' && /\s/.test(name) ? `"${String(name).replace(/"/g, "'")}"` : String(name);
+  const out = []; let n = 0, lines = 0;
+  if (layout === 'table') {
+    if (e.header) out.push(com + ['series', ...cols].join(sep));
+    for (const s of list) for (const r of seriesRows(d, s, c)) { out.push([quoted(s.name), ...cells(r)].join(sep)); n++; }
+    lines = n;
+  } else if (layout === 'side') {
+    const all = list.map(s => seriesRows(d, s, c));
+    lines = Math.max(0, ...all.map(rs => rs.length));
+    if (e.header) out.push(com + list.flatMap(s => cols.map(k => label(`${s.name} ${k}`))).join(sep));
+    const pad = cols.map(() => csv ? '' : 'NaN');
+    for (let i = 0; i < lines; i++) out.push(all.flatMap(rs => rs[i] ? cells(rs[i]) : pad).join(sep));
+    n = all.reduce((t, rs) => t + rs.length, 0);
   } else {
     list.forEach((s, i) => {
-      if (i) out.push('', '');
-      if (e.header) { if (multi) out.push('# ' + s.name); out.push('# ' + cols.join(sep)); }
+      if (i) out.push(...(csv ? [''] : ['', '']));
+      if (e.header) { if (multi) out.push(csv ? csvCell(s.name) : '# ' + s.name); out.push(com + cols.join(sep)); }
       for (const r of seriesRows(d, s, c)) { out.push(cells(r).join(sep)); n++; }
     });
+    lines = n;
   }
-  return { text: n ? out.join('\n') + '\n' : '', rows: n, multi };
+  return { text: n ? out.join('\n') + '\n' : '', rows: n, lines, multi, layout };
 }
 function exportName(d, ext) {
   const scope = state.exp.scope === 'all' ? 'all-series' : slug(activeSeries(d).name);
@@ -2086,7 +2107,7 @@ function downloadsNS() {
   return dlPromise;
 }
 function hideSaving() {
-  $$('#btnSaveTxt, #btnSaveCsv, #miSaveProject').forEach(b => { b.hidden = true; });
+  $$('#btnSaveTxt, #btnSaveCsv, #btnSaveZip, #miSaveProject').forEach(b => { b.hidden = true; b.dataset.noSave = '1'; });
   $('.export-actions').style.gridTemplateColumns = '1fr';
 }
 async function saveFile(name, data, mime) {
@@ -2101,6 +2122,7 @@ async function saveFile(name, data, mime) {
       const code = err && err.code;
       if (code === 'declined') return false;
       if (code === 'rate_limited') toast('A save prompt is already open.');
+      else if (code === 'extension_not_enabled') toast(`Saving .${name.split('.').pop()} files isn’t available in this view.`, { kind: 'bad' });
       else if (['unavailable', 'not_granted', 'capability_disabled', 'capability_removed'].includes(code)) { toast('Saving files isn’t available in this view. Use Copy instead.', { kind: 'bad' }); hideSaving(); }
       else toast(`Couldn’t save ${name}.`, { kind: 'bad' });
       return false;
@@ -2113,9 +2135,65 @@ async function saveFile(name, data, mime) {
   toast(`Saved ${name}`);
   return true;
 }
+// Minimal ZIP writer (stored, uncompressed): plenty for a handful of small text files.
+let crcTable = null;
+function crc32(bytes) {
+  if (!crcTable) {
+    crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; crcTable[n] = c >>> 0; }
+  }
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = crcTable[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = [], now = new Date();
+  const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, time, true); h.setUint16(12, date, true); h.setUint32(14, crc, true);
+    h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+    parts.push(h.buffer, name, data);
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint16(8, 0x0800, true); cd.setUint16(10, 0, true);
+    cd.setUint16(12, time, true); cd.setUint16(14, date, true); cd.setUint32(16, crc, true);
+    cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true); cd.setUint16(28, name.length, true);
+    cd.setUint32(42, offset, true);
+    central.push(cd.buffer, name);
+    offset += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((t, b) => t + b.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+}
+// One file per series (in the chosen separator), all in one .zip.
+function seriesZip(d) {
+  const csv = state.exp.sep === 'comma', ext = csv ? 'csv' : 'txt', used = new Set();
+  const files = d.series.filter(s => s.points.length).map(s => {
+    const base = slug(s.name); let name = base, k = 2;
+    while (used.has(name)) name = `${base}-${k++}`;
+    used.add(name);
+    return { name: `${name}.${ext}`, text: buildExport(d, { list: [s] }).text };
+  });
+  return files;
+}
+function saveZip() {
+  const d = cur(); if (!d) return;
+  const c = calibration(d);
+  if (!c.ok) { toast(c.msg, { kind: 'bad' }); return; }
+  const files = seriesZip(d);
+  if (!files.length) { toast('There are no points to export yet.'); return; }
+  saveFile(`${slug(d.name)}-series.zip`, makeZip(files), 'application/zip');
+}
 function saveData(kind) {
   const d = cur(); if (!d) return;
-  const out = buildExport(d, kind === 'csv');
+  const out = buildExport(d, { csv: kind === 'csv' });
   if (!out.rows) { toast(out.msg || 'There are no points to export yet.', { kind: out.msg ? 'bad' : '' }); return; }
   saveFile(exportName(d, kind), out.text, kind === 'csv' ? 'text/csv' : 'text/plain');
 }
@@ -2465,17 +2543,18 @@ function syncExport(d) {
   $('#optHeader').checked = !!e.header; $('#optErrors').checked = !!e.errors;
   const sg = $('#optSigma'); if (document.activeElement !== sg) sg.value = e.sigma;
   $$('[data-err-only]').forEach(el => { el.hidden = !e.errors; });
+  $$('[data-all-only]').forEach(el => { el.hidden = e.scope !== 'all' || el.dataset.noSave === '1'; });
   const ta = $('#preview');
   if (!d) { ta.value = ''; ta.placeholder = 'Open a plot to see its data here.'; $('#expRows').textContent = '0 rows'; $('#expHint').textContent = ''; }
   else {
     const out = buildExport(d);
     if (ta.value !== out.text) ta.value = out.text;
     ta.placeholder = out.msg ? `${out.msg}\nValues appear here once the axes are calibrated.` : `No points in ${e.scope === 'all' ? 'any series' : activeSeries(d).name} yet.`;
-    $('#expRows').textContent = `${out.rows} row${out.rows === 1 ? '' : 's'}`;
-    $('#expHint').textContent = out.multi && e.sep !== 'comma' ? 'Series separated by blank lines' : (out.multi ? 'Series in the first column' : '');
+    $('#expRows').textContent = out.layout === 'side' && out.multi ? `${out.rows} points in ${out.lines} rows` : `${out.rows} row${out.rows === 1 ? '' : 's'}`;
+    $('#expHint').textContent = !out.multi ? '' : { blocks: 'One block per series', table: 'Series name in the first column', side: 'An x and y column pair per series' }[out.layout];
   }
   const any = d && buildExport(d).rows > 0;
-  $$('#btnCopy, #btnSaveTxt, #btnSaveCsv').forEach(b => { b.disabled = !any; });
+  $$('#btnCopy, #btnSaveTxt, #btnSaveCsv, #btnSaveZip').forEach(b => { b.disabled = !any; });
 }
 function syncBanner(d) {
   const ban = $('#banner');
@@ -2692,6 +2771,7 @@ $('#optSigma').addEventListener('blur', () => changed());
 $('#btnCopy').addEventListener('click', copyData);
 $('#btnSaveTxt').addEventListener('click', () => saveData('txt'));
 $('#btnSaveCsv').addEventListener('click', () => saveData('csv'));
+$('#btnSaveZip').addEventListener('click', saveZip);
 
 // collapsible panels remember their state
 $$('details.sec').forEach(det => {
@@ -2848,6 +2928,6 @@ async function start(data) {
 if (hot && typeof hot.ready === 'function') hot.ready(start); else start((hot && hot.data) || {});
 
 // Expose a tiny inspection hook for scripted checks.
-window.__plotlift = { state, calibration, toData, buildExport, parseNum, fmtNum, cur, openFiles, setTool, autoAccept, addPoint: (x, y) => { const d = cur(); if (d) addPoint(d, x, y, false); }, detect: () => { const d = cur(); runDetect(d); return d._auto; } };
+window.__plotlift = { state, calibration, toData, buildExport, seriesZip, makeZip, parseNum, fmtNum, cur, openFiles, setTool, autoAccept, addPoint: (x, y) => { const d = cur(); if (d) addPoint(d, x, y, false); }, detect: () => { const d = cur(); runDetect(d); return d._auto; } };
 })();
 </script>
